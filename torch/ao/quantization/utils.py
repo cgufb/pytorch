@@ -372,7 +372,7 @@ def type_before_parametrizations(module):
     else:
         return type(module)
 
-def is_leaf(module):
+def is_leaf_or_only_parametrized(module):
     """
     Checks if module._modules is empty or
     if module is a parametrization, checks that module._modules only has

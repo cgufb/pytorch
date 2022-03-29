@@ -17,7 +17,7 @@ from torch.ao.quantization.quantization_mappings import (
     _has_special_act_post_process,
     _get_special_act_post_process,
 )
-from .utils import get_qparam_dict, type_before_parametrizations, is_leaf
+from .utils import get_qparam_dict, type_before_parametrizations, is_leaf_or_only_parametrized
 from torch.ao.quantization.stubs import DeQuantStub, QuantWrapper
 from torch.ao.quantization.qconfig import (
     add_module_to_qconfig_obs_ctr,
@@ -50,7 +50,7 @@ def _propagate_qconfig_helper(module, qconfig_dict,
         None, module is modified inplace with qconfig attached
     """
 
-    module_qconfig = qconfig_dict.get(type(module), qconfig_parent)
+    module_qconfig = qconfig_dict.get(type_before_parametrizations(module), qconfig_parent)
     module_qconfig = qconfig_dict.get(prefix, module_qconfig)
     module_qconfig = getattr(module, 'qconfig', module_qconfig)
 
@@ -185,7 +185,7 @@ def add_observer_(module, qconfig_propagation_list=None, non_leaf_module_list=No
 
     # Insert observers only for leaf nodes, note that this observer is for
     # the output of the module, for input QuantStub will observe them
-    if is_leaf(module) and not isinstance(module, torch.nn.Sequential) \
+    if is_leaf_or_only_parametrized(module) and not isinstance(module, torch.nn.Sequential) \
        and type_before_parametrizations(module) in qconfig_propagation_list:
         insert_activation_post_process(module)
 
@@ -208,7 +208,7 @@ def add_quant_dequant(module):
         wraps the input module, the latter case only happens when the input
         module is a leaf module and we want to quantize it.
     """
-    if is_leaf(module) and hasattr(module, 'qconfig') and module.qconfig:
+    if is_leaf_or_only_parametrized(module) and hasattr(module, 'qconfig') and module.qconfig:
         return QuantWrapper(module)
 
     for name, child in module.named_children():
@@ -540,7 +540,7 @@ def _convert(
         # both fused modules and observed custom modules are
         # swapped as one unit
         if not isinstance(mod, _FusedModule) and \
-           type(mod) not in custom_module_class_mapping:
+           type_before_parametrizations(mod) not in custom_module_class_mapping:
             _convert(mod, mapping, True,  # inplace
                      is_reference, convert_custom_config_dict)
         reassign[name] = swap_module(mod, mapping, custom_module_class_mapping)
@@ -564,11 +564,11 @@ def swap_module(mod, mapping, custom_module_class_mapping):
     new_mod = mod
     if hasattr(mod, 'qconfig') and mod.qconfig is not None:
         swapped = False
-        if type(mod) in custom_module_class_mapping:
-            new_mod = custom_module_class_mapping[type(mod)].from_observed(mod)
+        if type_before_parametrizations(mod) in custom_module_class_mapping:
+            new_mod = custom_module_class_mapping[type_before_parametrizations(mod)].from_observed(mod)
             swapped = True
-        elif type(mod) in mapping:
-            qmod = mapping[type(mod)]
+        elif type_before_parametrizations(mod) in mapping:
+            qmod = mapping[type_before_parametrizations(mod)]
             if hasattr(qmod, '_IS_REFERENCE') and qmod._IS_REFERENCE:
                 assert mod.qconfig is not None
                 weight_post_process = mod.qconfig.weight()
